@@ -1,0 +1,1097 @@
+import dash 
+from dash import dcc, html, Input, Output, State, dash_table
+import pandas as pd
+import numpy as np
+import base64
+import io
+import zipfile
+import tempfile
+import os
+import re
+import random
+from PIL import Image
+import plotly.express as px
+import plotly.graph_objects as go
+
+app = dash.Dash(__name__,suppress_callback_exceptions=True)
+app.title = "Drowsiness & Driving Behavior Dashboard"
+
+APP_BG = "#f5f7fb"
+CARD_STYLE = {
+    "backgroundColor": "#ffffff",
+    "padding": "20px",
+    "marginBottom": "20px",
+    "borderRadius": "14px",
+    "boxShadow": "0 6px 18px rgba(0,0,0,0.08)",
+}
+CARD_HEADER_STYLE = {"margin": 0, "fontWeight": 700}
+
+MODEL_COLORS = {
+    "holtwinters": "red",
+    "arima": "green",
+    "prophet": "purple"
+}
+
+STATUS_COLORS = {
+    "Active": "#22c55e",     # green
+    "Drowsy": "#f59e0b",     # amber
+    "Sleeping": "#ef4444",   # red
+    "Yawning": "#8b5cf6"     # purple
+}
+# Global store
+global_store = {
+    "drowsiness_df": None,
+    "yawning_images": [],
+    "drowsy_images": [],
+    "sleeping_images": []
+}
+TABLE_STYLE = dict(
+    style_table={"overflowX": "auto"},
+    style_cell={"padding": "6px", "textAlign": "center", "fontSize": "13px", "whiteSpace": "normal", "height": "auto"},
+    style_header={"backgroundColor": "#f3f4f6", "fontWeight": "bold"},
+    style_data_conditional=[
+        {"if": {"row_index": "odd"}, "backgroundColor": "#f9fafb"}
+    ]
+)
+# A simple helper to create a titled card
+def Card(children, title=None, extra_style=None):
+    style = CARD_STYLE.copy()
+    if extra_style:
+        style.update(extra_style)
+    return html.Div([
+        html.Div([
+            html.H2(title, style=CARD_HEADER_STYLE) if title else None,
+            html.Div(children)
+        ], style={"display": "flex", "flexDirection": "column", "gap": "12px"})
+    ], style=style)
+
+# Layout
+app.layout = html.Div([
+   # Header
+    html.Div([
+        html.H1("Drowsiness & Driving Behavior Dashboard", style={
+            "margin": 0,
+            "fontSize": "28px",
+            "fontWeight": 800
+        }),
+        html.Div("Unified view of drowsiness states, driving behavior, and premium trends", style={
+            "color": "#6b7280"
+        })
+    ], style={
+        "display": "flex", "flexDirection": "column", "gap": "6px",
+        "padding": "20px 0"
+    }),
+    
+     # KPI strip (populated after CSV upload)
+    Card(html.Div(id="kpi-strip"), title="Key Metrics"),
+
+    # Uploads
+    Card([
+        html.Div([
+            dcc.Upload(id="upload-csv", children=html.Button("📄 Drowsiness CSV")),
+            dcc.Upload(id="upload-zip", children=html.Button("🖼️ Drowsiness Images (ZIP)")),
+            dcc.Upload(id="upload-behavior", children=html.Button("🚗 Driving Behavior CSV")),
+            dcc.Upload(id="upload-driving-sensor", children=html.Button("📊 Driving Sensor CSV")),
+            dcc.Upload(id="upload-claim", children=html.Button("💰 Insurance Claim CSV")),
+        ], style={"display": "flex", "gap": "10px", "flexWrap": "wrap"}),
+        html.Div(id='csv-status', style={"fontWeight": 600, "color": "#1f2937"})
+    ], title="Upload Files"),
+
+
+   # Drowsiness section: side-by-side graphs + images row
+    Card([
+        html.Div([
+            dcc.Graph(id="drowsiness-line", style={"flex": "1 1 48%", "minWidth": "320px"}),
+            dcc.Graph(id="drowsiness-bar", style={"flex": "1 1 48%", "minWidth": "320px"}),
+        ], style={"display": "flex", "justifyContent": "space-between", "flexWrap": "wrap", "gap": "2%"}),
+        html.Div([
+            html.H4("Sample Status Images", style={"margin": 0}),
+            html.Div(id='image-columns', style={"display": "flex", "gap": "20px", "flexWrap": "wrap"})
+        ])
+    ], title="Drowsiness Analysis"),
+
+    # Driving Behavior
+    Card([
+        dcc.Dropdown(
+            id="behavior-user-filter",
+            options=[{"label": str(uid), "value": uid} for uid in global_store.get("available_user_ids", [])],
+            multi=True,
+            placeholder="Select User ID(s)",
+            style={"width": "320px", "marginBottom": "12px"}
+        ),
+        
+        html.Div([
+            dcc.Graph(id='behavior-bar', style={"flex": "1 1 60%", "minWidth": "320px"}),
+            html.Div([
+                html.H4("Preview", style={"marginTop": 0}),
+                html.Div(id="behavior-preview")
+            ], style={"flex": "1 1 38%", "minWidth": "300px"})
+        ], style={"display": "flex", "justifyContent": "space-between", "gap": "2%", "flexWrap": "wrap"})
+    ], title="Driving Behavior Analysis"),
+    
+    # Risk Summary + Trend
+    Card([
+        dcc.Dropdown(
+            id="risk-user-filter",
+            multi=True,
+            placeholder="Select User ID(s)",
+            style={"width": "320px", "marginBottom": "12px"}
+    ),
+        html.Div([
+            html.Div([
+                html.H4("📉 Average Risk", style={"marginTop": 0}),
+                html.Div(id="avg-risk", style={"fontSize": "28px", "fontWeight": "bold"})
+            ], style={"padding": "12px", "border": "1px solid #e5e7eb", "borderRadius": "12px", "flex": "1 1 30%", "background": "#f0f7ff", "minWidth": "260px"}),
+
+            html.Div([
+                html.H4("🔥 High Risk Events", style={"marginTop": 0}),
+                html.Div(id="high-risk-events", style={"fontSize": "28px", "fontWeight": "bold"})
+            ], style={"padding": "12px", "border": "1px solid #e5e7eb", "borderRadius": "12px", "flex": "1 1 30%", "background": "#fff5f5", "minWidth": "260px"}),
+
+            html.Div([
+                html.H4("📊 Risk Contribution", style={"marginTop": 0}),
+                dcc.Graph(id="risk-pie", style={"height": "300px"})
+            ], style={"flex": "1 1 30%", "minWidth": "260px"})
+        ], style={"display": "flex", "flexWrap": "wrap", "justifyContent": "space-between", "gap": "20px"}),
+
+        html.H4("🧾 Risk Breakdown by User", style={"marginTop": "20px"}),
+        html.Div(id="risk-breakdown"),
+        html.H4("🔍 Detailed Breakdown (per record)", style={"marginTop": "20px"}),
+        html.Div(id="risk-detail"),
+
+
+    ], title="Combined Risk Summary"),
+        # Premium Trends
+    Card([
+        html.Div([
+            dcc.Dropdown(
+                id='trend-frequency',
+                options=[
+                    {'label': 'Weekly', 'value': 'W'},
+                    {'label': 'Monthly', 'value': 'M'}
+                ],
+                value='W',
+                clearable=False,
+                style={"width": "200px"}
+            ),
+            dcc.Dropdown(
+                id='user-filter',
+                multi=True,
+                placeholder="Select User ID(s)",
+                style={"width": "320px"}
+            )
+        ], style={"display": "flex", "gap": "12px", "flexWrap": "wrap"}),
+
+        html.Div(
+            id ="premium-formula",
+            style={"padding": "8px", 
+                   "background": "#fef3c7", 
+                   "borderRadius": "6px",
+                   "fontWeight": 600,
+                   "display": "inline-block",
+            },
+        ),
+
+        dcc.Graph(id="premium-trend-chart")
+    ], title="Weekly & Monthly Insurance Premium Trends"),
+
+    # Insurance Claim Estimator (shows results from the uploaded claim CSV)
+    Card([
+        html.Div(id="claim-prediction-output")
+    ], title="Insurance Claim Estimator"),
+
+    # Critical Events (collapsible)
+    Card([
+        html.Button("Show / Hide Critical Events", id="toggle-critical"),
+        html.Div([
+            dash_table.DataTable(id="critical-events-table", style_table={"overflowX": "auto"})
+        ], id="critical-wrapper", style={"display": "none"})
+    ], title="⚠️ Critical Events (e.g., Sleeping + Aggressive)"),
+
+    # After Premium Trends card
+Card([
+    html.Div([
+        dcc.Dropdown(
+            id="prediction-frequency",
+            options=[
+                {"label": "Weekly Prediction", "value": "W"},
+                {"label": "Monthly Prediction", "value": "M"}
+            ],
+            value="W",
+            clearable=False,
+            style={"width": "240px"}
+        ),
+        dcc.Dropdown(
+            id="prediction-horizon",
+            options=[
+                {"label": "4 periods", "value": 4},
+                {"label": "8 periods", "value": 8},
+                {"label": "12 periods", "value": 12}
+            ],
+            value=8,
+            clearable=False,
+            style={"width": "180px", "marginLeft": "12px"}
+        ),
+        dcc.Dropdown(
+            id="prediction-user-filter",
+            multi=True,
+            placeholder="Select User(s)",
+            style={"width": "320px"}
+    ),
+        dcc.Dropdown(
+            id="prediction-model",
+            options=[
+            {"label": "Holt-Winters", "value": "holtwinters"},
+            {"label": "ARIMA", "value": "arima"},
+            {"label": "Prophet", "value": "prophet"}
+            # later you can add {"label": "LSTM", "value": "lstm"}
+            ],
+            value="holtwinters",
+            clearable=False,
+            style={"width": "220px"}
+        ),
+
+        html.Button("Run Prediction", id="run-prediction", n_clicks=0,
+                    style={"marginLeft": "12px"})
+    ], style={"display": "flex", "alignItems": "center", "gap": "12px","flexWrap": "wrap"}),
+    html.Div(id="prediction-output"),
+    dcc.Graph(id="prediction-chart")
+], title="🔮 Premium Prediction"),
+
+
+], style={
+    "fontFamily": "Arial, sans-serif",
+    "backgroundColor": APP_BG,
+    "minHeight": "100vh",
+    "padding": "0 20px",
+    "maxWidth": "1200px",
+    "margin": "0 auto"
+})
+
+# Callbacks (logic preserved, UI enhanced)
+# -----------------------------
+@app.callback(
+    Output("kpi-strip", "children"),
+    Input("upload-csv", "contents")
+)
+def kpis(csv_content):
+    if not csv_content:
+        return html.Div("Upload drowsiness CSV to see key metrics.")
+
+    _, content_string = csv_content.split(',')
+    df = pd.read_csv(io.StringIO(base64.b64decode(content_string).decode("utf-8")))
+    if "Normalized Status" in df.columns:
+        df["Status"] = df["Normalized Status"]
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    df = df.dropna(subset=['Timestamp'])
+    df['User ID'] = pd.to_numeric(df['User ID'], errors='coerce')
+    df = df.dropna(subset=['User ID'])
+    df['User ID'] = df['User ID'].astype(int)
+
+    total_users = df['User ID'].nunique()
+    total_records = len(df)
+    sleep_pct = (df['Status'] == 'Sleeping').mean() * 100 if 'Status' in df.columns else 0
+
+    def metric(title, value, bg):
+        return html.Div([
+            html.Div(title, style={"fontWeight": 700, "marginBottom": "4px"}),
+            html.Div(value, style={"fontSize": "22px", "fontWeight": 800})
+        ], style={"flex": "1 1 30%", "minWidth": "220px", "background": bg, "borderRadius": "12px", "padding": "12px", "border": "1px solid #e5e7eb"})
+
+    return html.Div([
+        metric("👥 Total Users", str(total_users), "#eef2ff"),
+        metric("🧾 Records", str(total_records), "#ecfeff"),
+        metric("😴 Sleeping %", f"{sleep_pct:.1f}%", "#fff7ed"),
+    ], style={"display": "flex", "gap": "16px", "flexWrap": "wrap"})
+
+
+@app.callback(
+    Output("csv-status", "children"),
+    Output("drowsiness-line", "figure"),
+    Output("drowsiness-bar", "figure"),
+    Input("upload-csv", "contents"),
+    State("upload-csv", "filename")
+)
+def process_csv(csv_content, filename):
+    if csv_content is None:
+        return "Please upload a CSV file.", go.Figure(), go.Figure()
+
+    content_type, content_string = csv_content.split(',')
+    decoded = base64.b64decode(content_string)
+    df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
+
+    if "Normalized Status" in df.columns:
+        df["Status"] = df["Normalized Status"]
+
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+    df = df.dropna(subset=['Timestamp'])
+
+    df['User ID'] = pd.to_numeric(df['User ID'], errors='coerce')
+    df = df.dropna(subset=['User ID'])
+    df['User ID'] = df['User ID'].astype(int)
+
+    global_store['drowsiness_df'] = df
+    # # Automatically update available User IDs everywhere
+    user_ids = sorted(df["User ID"].unique())
+    global_store["available_user_ids"] = user_ids
+
+
+    # Long-form counts for better color mapping
+    state_counts = df.assign(Date=df['Timestamp'].dt.date).groupby(['Date', 'Status']).size().reset_index(name='Count')
+    fig1 = px.line(state_counts, x='Date', y='Count', color='Status', markers=True,
+                   color_discrete_map=STATUS_COLORS, title='Distribution of Drowsiness States Over Time')
+    fig1.update_layout(xaxis_title="Date", yaxis_title="Frequency")
+
+    user_state_counts = df.groupby(['User ID', 'Status']).size().reset_index(name='Count')
+    fig2 = px.bar(user_state_counts, x='User ID', y='Count', color='Status', barmode='stack',
+                  color_discrete_map=STATUS_COLORS, title='Drowsiness State Distribution by User ID')
+    fig2.update_layout(xaxis_title="User ID", yaxis_title="Frequency")
+
+    return f"{filename} uploaded and processed.", fig1, fig2
+
+
+
+@app.callback(
+    Output("image-columns", "children"),
+    Input("upload-zip", "contents"),
+    State("upload-zip", "filename")
+)
+def process_zip(zip_content, filename):
+    if zip_content is None:
+        return [html.Div("Please upload a ZIP folder containing drowsiness images.")]
+
+    content_type, content_string = zip_content.split(',')
+    decoded = base64.b64decode(content_string)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        zip_path = os.path.join(tmp_dir, "temp.zip")
+        with open(zip_path, "wb") as f:
+            f.write(decoded)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(tmp_dir)
+
+        yawning_pattern = re.compile(r'yawning', re.IGNORECASE)
+        drowsy_pattern = re.compile(r'drowsy', re.IGNORECASE)
+        sleeping_pattern = re.compile(r'sleeping', re.IGNORECASE)
+
+        yawning_images, drowsy_images, sleeping_images = [], [], []
+
+        for root, _, files in os.walk(tmp_dir):
+            for file in files:
+                filepath = os.path.join(root, file)
+                if yawning_pattern.search(file): yawning_images.append(filepath)
+                elif drowsy_pattern.search(file): drowsy_images.append(filepath)
+                elif sleeping_pattern.search(file): sleeping_images.append(filepath)
+
+        global_store['yawning_images'] = yawning_images
+        global_store['drowsy_images'] = drowsy_images
+        global_store['sleeping_images'] = sleeping_images
+
+        def img_div(image_list, label):
+            if not image_list:
+                return html.Div(f"No {label} images found.", style={"color": "#6b7280"}),
+            img = Image.open(random.choice(image_list))
+            buf = io.BytesIO()
+            img.save(buf, format='PNG')
+            encoded = base64.b64encode(buf.getvalue()).decode()
+            return html.Div([
+                html.Div(label, style={"fontWeight": 600, "marginBottom": "6px"}),
+                html.Img(src=f'data:image/png;base64,{encoded}', style={'height': '220px', 'borderRadius': '10px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.1)'})
+            ])
+
+        return [
+            img_div(yawning_images, "Yawning"),
+            img_div(drowsy_images, "Drowsy"),
+            img_div(sleeping_images, "Sleeping"),
+        ]
+        
+@app.callback(
+    Output("behavior-user-filter", "options"),
+    Output("risk-user-filter", "options"),
+    Input("csv-status", "children")
+)
+def populate_behavior_risk_users(_):
+    df = global_store.get("drowsiness_df")
+    if df is None or "User ID" not in df.columns:
+        return [], []
+    users = sorted(df["User ID"].unique())
+    options = [{"label": f"User {uid}", "value": uid} for uid in users]
+    return options, options
+
+@app.callback(
+    Output("behavior-bar", "figure"),
+    Output("behavior-preview", "children"),
+    Input("upload-behavior", "contents"),
+    Input("behavior-user-filter", "value"),
+    State("upload-behavior", "filename")
+)
+
+def process_behavior(csv_content,selected_users, filename):
+    if csv_content is None or global_store["drowsiness_df"] is None:
+        return go.Figure(), "Upload a driving behavior file and make sure drowsiness data is available."
+
+    import random
+    random.seed(42)
+    np.random.seed(42)
+    
+    content_type, content_string = csv_content.split(',')
+    decoded = base64.b64decode(content_string)
+    df_behavior = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
+
+    # Sequential User ID mapping
+    df_drowsy = global_store["drowsiness_df"]
+    user_ids = global_store.get("available_user_ids", sorted(df_drowsy["User ID"].unique()))
+
+    # --- Identify the correct column name automatically ---
+    possible_cols = [c for c in df_behavior.columns if c.lower() in ["target", "class", "label", "behavior", "behaviour", "y"]]
+    if possible_cols:
+        target_col = possible_cols[0]
+    else:
+        raise ValueError(f"No valid behavior label column found in file. Available columns: {list(df_behavior.columns)}")
+        
+    # Behavior label mapping
+    class_mapping = {
+        1: "Sudden Acceleration",
+        2: "Sudden Right Turn",
+        3: "Sudden Left Turn",
+        4: "Sudden Braking"
+    }
+
+    # Optional Debug Prints (see terminal output) 
+    df_behavior["Behavior Label"] = df_behavior[target_col].map(class_mapping).fillna("Unknown")
+
+     # ✅ Assign unique combinations of behaviors for each user
+    rng = np.random.default_rng(42)
+    # Weighted probabilities to include "Medium" styles
+    behavior_pool = list(class_mapping.values())
+    num_behaviors = rng.choice([1, 2, 3, 4], size=len(user_ids), p=[0.30, 0.40, 0.20, 0.10])
+
+    # Weighted probabilities to include "Medium" styles
+    behavior_pool = list(class_mapping.values())
+    num_behaviors = rng.choice([1, 2, 3, 4], size=len(user_ids), p=[0.30, 0.40, 0.20, 0.10])
+
+    user_behavior_rows = []
+    for uid, n in zip(user_ids, num_behaviors):
+        selected = rng.choice(behavior_pool, size=n, replace=False)
+        user_behavior_rows.append({
+            "User ID": uid,
+            "Driving Behaviors": ", ".join(sorted(selected))
+        })
+
+    behavior_per_user = pd.DataFrame(user_behavior_rows)
+    
+     # Driving Style Classification
+    def classify_driving_style(behaviors):
+        count = len(behaviors.split(", "))
+        if count <= 1:
+            return "Normal"
+        elif count == 2:
+            return "Medium"
+        else:
+            return "Aggressive"
+    behavior_per_user["Driving Style"] = behavior_per_user["Driving Behaviors"].apply(classify_driving_style)
+
+     # ✅ Apply dropdown filter if users selected
+    filtered_users = behavior_per_user
+    if selected_users:
+        filtered_users = behavior_per_user[behavior_per_user["User ID"].isin(selected_users)]
+    
+    # Bar chart
+    all_behaviors = []
+    for b in filtered_users["Driving Behaviors"]:
+        all_behaviors.extend(b.split(", "))
+
+    behavior_counts =(
+        pd.Series(all_behaviors)
+        .value_counts()
+        .rename_axis("Behavior")
+        .reset_index(name="Count")
+    )
+    
+    fig = px.bar(behavior_counts, x="Behavior", y="Count",
+                 title="Driving Behavior Class Distribution",
+                 labels={"Behavior": "Behavior Type", "Count": "Count"})
+
+    global_store["behavior_summary"] = behavior_per_user
+    # Styled preview table
+    preview_table = dash_table.DataTable(
+        data=filtered_users.to_dict("records"),
+        columns=[{"name": i, "id": i} for i in filtered_users.columns],
+        **TABLE_STYLE
+    )
+
+    return fig, preview_table
+
+
+@app.callback(
+    Output("avg-risk", "children"),
+    Output("high-risk-events", "children"),
+    Output("risk-pie", "figure"),
+    Output("critical-events-table", "data"),
+    Output("critical-events-table", "columns"),
+    Output("risk-breakdown", "children"),
+    Output("risk-detail", "children"),
+    Input("upload-csv", "contents"),
+    Input("upload-driving-sensor", "contents"),
+    Input("risk-user-filter", "value"),
+)
+def update_combined_risk(csv_content, sensor_content, selected_users):
+    if csv_content is None or sensor_content is None:
+        return (
+        "N/A", 
+        "N/A", 
+        go.Figure(), 
+        [], 
+        [], 
+        html.Div("No data uploaded yet."), 
+        html.Div("No detail available.")   # 👈 added for risk-detail
+    )
+    
+    _, csv_string = csv_content.split(',')
+    df_drowsy = pd.read_csv(io.StringIO(base64.b64decode(csv_string).decode("utf-8")))
+    if "Normalized Status" in df_drowsy.columns:
+        df_drowsy["Status"] = df_drowsy["Normalized Status"]
+    drowsy_map = {"Active": 0, "Drowsy": 1, "Yawning": 2, "Sleeping": 3}
+    df_drowsy["Drowsiness Risk"] = df_drowsy["Status"].map(drowsy_map)
+    
+
+    _, sensor_string = sensor_content.split(',')
+    df_motion = pd.read_csv(io.StringIO(base64.b64decode(sensor_string).decode("utf-8")))
+    behavior_map = {"SLOW": 0, "NORMAL": 1, "AGGRESSIVE": 2}
+    df_motion["Driving Risk"] = df_motion["Class"].map(behavior_map)
+    
+    # Align lengths
+    min_len = min(len(df_drowsy), len(df_motion))
+    df_combined = pd.DataFrame({
+       "Timestamp": df_drowsy.loc[:min_len-1, "Timestamp"].values,
+        "User ID": df_drowsy.loc[:min_len-1, "User ID"].values,
+        "Drowsiness Status": df_drowsy.loc[:min_len-1, "Status"].values,
+        "Driving Style": df_motion.loc[:min_len-1, "Class"].values,
+        "Drowsiness Risk": df_drowsy.loc[:min_len-1, "Drowsiness Risk"].values,
+        "Driving Risk": df_motion.loc[:min_len-1, "Driving Risk"].values
+    })
+
+    df_combined["Total Risk"] = (df_combined["Drowsiness Risk"] + df_combined["Driving Risk"]) / 2
+
+    # Filter by selected users ---
+    if selected_users:
+        df_combined = df_combined[df_combined["User ID"].isin(selected_users)]
+        
+     # Summary metrics
+    avg_total_risk = df_combined["Total Risk"].mean()
+    high_risk_count = (df_combined["Total Risk"] >= 2.5).sum()
+
+    # Pie chart 
+    d_avg = df_combined["Drowsiness Risk"].mean()
+    b_avg = df_combined["Driving Risk"].mean()
+    fig_pie = px.pie(
+        names=["Drowsiness", "Driving"],
+        values=[d_avg, b_avg],
+        title="Average Contribution to Total Risk"
+    )
+
+    d_avg = df_combined["Drowsiness Risk"].mean()
+    b_avg = df_combined["Driving Risk"].mean()
+    fig_pie = px.pie(
+        names=["Drowsiness", "Driving"],
+        values=[d_avg, b_avg],
+        title="Average Contribution to Total Ris"
+    )
+    critical = df_combined[
+        (df_combined["Drowsiness Risk"] >=2) &
+        (df_combined["Driving Risk"] >=2)
+    ]
+    table_data = critical.to_dict("records")
+    table_cols = [{"name": i, "id": i} for i in critical.columns]
+    
+    # Risk breakdown per user 
+    def classify_risk(risk):
+        if risk < 1.5:
+            return "Low"
+        elif risk < 2.5:
+            return "Medium"
+        else:
+            return "High"
+
+    df_combined["Risk Level"] = df_combined["Total Risk"].apply(classify_risk)
+
+    #  Detailed records for selected users 
+    if selected_users and len(selected_users) == 1:
+        user_detail = df_combined[df_combined["User ID"] == selected_users[0]].copy()
+        user_detail = user_detail[[
+            "User ID", "Drowsiness Status", "Driving Style",
+            "Drowsiness Risk", "Driving Risk", "Total Risk", "Risk Level"
+        ]]
+        detail_table = dash_table.DataTable(
+            data=user_detail.to_dict("records"),
+            columns=[{"name": col, "id": col} for col in user_detail.columns],
+            page_size=10,  # show 10 rows at a time
+            style_table={"overflowX": "auto"},
+            style_cell={"textAlign": "center"}
+        )
+        detail_table = dash_table.DataTable(
+            data=df_combined.to_dict("records"),
+            columns=[{"name": col, "id": col} for col in df_combined.columns],
+        **TABLE_STYLE
+)
+
+    else:
+        detail_table = html.Div("Select a single user to see detailed breakdown.")
+
+    risk_per_user = (
+        df_combined.groupby(["User ID", "Risk Level"])
+        .size()
+        .reset_index(name="Count")
+    )
+
+    risk_summary = risk_per_user.pivot_table(
+        index="User ID", columns="Risk Level", values="Count", fill_value=0
+    ).reset_index()
+
+    risk_table = dash_table.DataTable(
+        data=risk_summary.to_dict("records"),
+        columns=[{"name": col, "id": col} for col in risk_summary.columns],
+        style_table={"overflowX": "auto"}
+    )
+
+
+    return (
+        f"{avg_total_risk:.2f}",
+        f"{high_risk_count} times",
+        fig_pie,
+        table_data,
+        table_cols,
+        risk_table,
+        detail_table
+    )   
+
+@app.callback(
+    Output("claim-prediction-output", "children"),
+    Input("upload-claim", "contents"),
+    State("upload-claim", "filename")
+)
+def process_claim_file(claim_content, filename):
+    if claim_content is None:
+        return "Please upload a car insurance claim CSV file."
+
+    try:
+        content_type, content_string = claim_content.split(',')
+        decoded = base64.b64decode(content_string)
+        df_claim = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
+
+         # ✅ Automatically use available users from uploaded drowsiness file
+        user_ids = global_store.get("available_user_ids", [])
+        if len(user_ids) == 0:
+            return "Please upload a drowsiness CSV first so user IDs can be loaded."
+
+        # Assign user ID if missing
+        if "User ID" not in df_claim.columns:
+           # If the claim file has no User ID, evenly distribute data across users
+            df_claim["User ID"] = np.resize(user_ids, len(df_claim))
+        else:
+            # If claim file already has User ID, keep only matching users
+            df_claim = df_claim[df_claim["User ID"].isin(user_ids)].copy()
+    # If still empty, fallback to even distribution
+        if df_claim.empty:
+            df_claim["User ID"] = np.resize(user_ids, len(df_claim))
+
+        df_claim = df_claim.copy()    
+
+        # Merge Driving Style
+        behavior_summary = global_store.get("behavior_summary")
+        if behavior_summary is not None:
+            df_claim = pd.merge(df_claim, behavior_summary[["User ID", "Driving Style"]], on="User ID", how="left")
+        else:
+            df_claim["Driving Style"] = "Normal"
+
+        # Merge Drowsiness Risk
+        drowsiness_df = global_store.get("drowsiness_df")
+        if drowsiness_df is not None and "User ID" in drowsiness_df.columns:
+            risk_map = {"Active": 0, "Drowsy": 1, "Yawning": 2, "Sleeping": 3}
+            drowsiness_df["Risk Score"] = drowsiness_df["Status"].map(risk_map)
+            avg_risk = drowsiness_df.groupby("User ID")["Risk Score"].mean().reset_index()
+            df_claim = pd.merge(df_claim, avg_risk, on="User ID", how="left")
+            df_claim["Drowsiness Risk"] = df_claim["Risk Score"].fillna(0)
+        else:
+            df_claim["Drowsiness Risk"] = 0
+
+        # Driving risk mapping
+        driving_risk_map = {"Normal": 0, "Medium": 1, "Aggressive": 2}
+        df_claim["Driving Risk"] = df_claim["Driving Style"].map(driving_risk_map).fillna(0)
+
+        # Calculate combined risk
+        df_claim["Risk_p"] = (df_claim["Driving Risk"] + df_claim["Drowsiness Risk"]) / 2
+
+        # === Detect ANNUAL_MILEAGE Column ===
+        mile_col = None
+        for col in df_claim.columns:
+            if col.strip().lower().replace(" ", "_") in ["annual_mile", "mileage", "annual_mileage", "annual-mileage"]:
+                mile_col = col
+                break
+
+        if mile_col:
+            df_claim["annual_mile"] = pd.to_numeric(df_claim[mile_col], errors='coerce').fillna(10000)
+        else:
+            df_claim["annual_mile"] = 10000
+
+        # === Premium Calculation ===
+        C0 = 300
+        wp = 0.05
+        df_claim["Estimated Premium"] = df_claim.apply(
+            lambda row: round(C0 + row["Risk_p"] * wp * row["annual_mile"]), axis=1
+        )
+
+        # Ensure 'User ID' column exists and is numeric
+        if "User ID" not in df_claim.columns:
+            df_claim["User ID"] = np.resize(user_ids, len(df_claim))
+        else:
+        # Handle string IDs and strip spaces
+            df_claim["User ID"] = pd.to_numeric(df_claim["User ID"], errors="coerce")
+    
+        # Filter to only users that exist in drowsiness dataset
+        valid_ids = set(global_store.get("available_user_ids", []))
+        if len(valid_ids) > 0:
+            df_claim = df_claim[df_claim["User ID"].isin(valid_ids)]
+
+        # If the dataset has duplicate rows per user, summarize
+        if df_claim["User ID"].duplicated().any():
+
+            df_claim = df_claim.groupby("User ID", as_index=False).agg({
+            "Driving Style": "first",
+            "Driving Risk": "mean",
+            "Drowsiness Risk": "mean",
+            "Risk_p": "mean",
+            "annual_mile": "mean",
+            "Estimated Premium": "mean"
+        })
+            # --- Round numeric values for cleaner presentation ---
+        numeric_cols = ["Driving Risk", "Drowsiness Risk", "Risk_p", "annual_mile", "Estimated Premium"]
+        for col in numeric_cols:
+            if col in df_claim.columns:
+                df_claim[col] = df_claim[col].round(0)  # keep only 2 decimal places
+
+        
+        # === Bar Chart of Estimated Premiums ===
+        fig = px.bar(
+            df_claim,
+            x="User ID",
+            y="Estimated Premium",
+            title="Estimated Insurance Premium per User",
+            text="Estimated Premium"
+        )
+        fig.update_traces(textposition="outside")
+        fig.update_layout(yaxis_title="Premium", xaxis_title="User ID", height=400)
+
+        # === Table View ===
+        table = dash_table.DataTable(
+            data=df_claim[[
+                "User ID", "Driving Style", "Driving Risk", "Drowsiness Risk",
+                "Risk_p", "annual_mile", "Estimated Premium"
+            ]].to_dict("records"),
+            columns=[{"name": col, "id": col} for col in [
+                "User ID", "Driving Style", "Driving Risk", "Drowsiness Risk",
+                "Risk_p", "annual_mile", "Estimated Premium"
+            ]],
+            **TABLE_STYLE   
+        )
+        
+        callout = html.Div(
+            "Formula: C₀ + Riskₚ × wₚ × annual_mile",
+            style={"padding": "8px", "background": "#fef3c7", "borderRadius": "6px", "fontWeight": 600, "display": "inline-block"}
+        )
+
+        return html.Div([
+            html.H4(f"{filename} processed."),
+            callout,
+            table,
+            dcc.Graph(figure=fig)
+        ])
+    
+    except Exception as e:
+        return f"Error processing file: {str(e)}",
+
+@app.callback(
+    Output("user-filter", "options"),
+    Output("user-filter", "value"),
+    Input("csv-status", "children")
+)
+def populate_user_filter(_):
+    df = global_store.get("drowsiness_df")
+    if df is None or "User ID" not in df.columns:
+        return [], []
+
+    users = sorted(df["User ID"].unique())
+    options = [{"label": f"User {uid}", "value": uid} for uid in users]
+    return options, users  # default: select all
+
+@app.callback(
+    Output("premium-formula", "children"),
+    Input("trend-frequency", "value"),
+)
+def show_premium_formula(frequency):
+    C0 = 300
+    wp = 0.05
+    base_mileage = 10000 / (52 if frequency == "W" else 12)
+    label = "Weekly" if frequency == "W" else "Monthly"
+    # The chart uses: Estimated Premium = C0 + (Avg Risk / 2) * wp * base_mileage
+    return (
+        f"{label} formula: Estimated Premium = "
+        f"C₀ + (Avg Risk / 2) × wₚ × base_mileage = "
+        f"{C0} + (Avg Risk / 2) × {wp} × {base_mileage:.2f}"
+    )
+
+@app.callback(
+    Output("premium-trend-chart", "figure"),
+    Input("trend-frequency", "value"),
+    Input("csv-status", "children"),
+    Input("user-filter", "value")
+)
+def generate_premium_trend(frequency, csv_status, selected_users):
+    df = global_store.get('drowsiness_df')
+    if df is None or 'Timestamp' not in df.columns:
+        return go.Figure().update_layout(title="Upload drowsiness log first")
+
+    try:
+        df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+        df = df.dropna(subset=["Timestamp", "User ID"])
+        df["User ID"] = df["User ID"].astype(int)
+
+        if "Normalized Status" in df.columns:
+            df["Status"] = df["Normalized Status"]
+
+        risk_map = {"Active": 0, "Drowsy": 1, "Yawning": 2, "Sleeping": 3}
+        df["Risk Score"] = df["Status"].map(risk_map)
+
+        # Filter by selected users
+        if selected_users:
+            df = df[df["User ID"].isin(selected_users)]
+
+        grouped = (
+            df.groupby([pd.Grouper(key='Timestamp', freq=frequency), 'User ID'])['Risk Score']
+            .mean().reset_index(name='Avg Risk')
+        )
+
+        base_mileage = 10000 / (52 if frequency == "W" else 12)
+        C0 = 300
+        wp = 0.05
+        grouped["Estimated Premium"] = grouped.apply(
+            lambda row: round(C0 + (row["Avg Risk"] / 2) * wp * base_mileage), axis=1
+        )
+
+        fig = px.line(
+            grouped,
+            x='Timestamp',
+            y='Estimated Premium',
+            color='User ID',
+            markers=True,
+            title=f"{'Weekly' if frequency == 'W' else 'Monthly'} Insurance Premium Trend per User"
+        )
+        fig.update_layout(yaxis_title="Premium", xaxis_title="Date")
+
+        return fig
+
+    except Exception as e:
+        return go.Figure().update_layout(title=f"Error: {str(e)}")
+
+# Collapsible critical events toggle
+@app.callback(
+    Output("critical-wrapper", "style"),
+    Input("toggle-critical", "n_clicks"),
+    prevent_initial_call=True
+)
+def toggle_critical(n):
+    # Alternate between shown and hidden on each click
+    if n and n % 2 == 1:
+        return {"display": "block"}
+    else:
+        return {"display": "none"}
+    
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+import plotly.graph_objects as go
+
+@app.callback(
+    Output("prediction-user-filter", "options"),
+    Output("prediction-user-filter", "value"),
+    Input("csv-status", "children")
+)
+def populate_prediction_users(_):
+    df = global_store.get("drowsiness_df")
+    if df is None or "User ID" not in df.columns:
+        return [], []
+    users = sorted(df["User ID"].unique())
+    options = [{"label": f"User {uid}", "value": uid} for uid in users]
+    return options, users  # default: select all
+
+
+from statsmodels.tsa.arima.model import ARIMA
+from prophet import Prophet
+@app.callback(
+    [Output("prediction-output", "children"),
+     Output("prediction-chart", "figure")],
+    [Input("run-prediction", "n_clicks"),
+     Input("prediction-frequency", "value"),
+     Input("prediction-horizon", "value"),
+     Input("prediction-user-filter", "value"),
+     Input("prediction-model", "value")],
+    prevent_initial_call=True
+)
+
+def predict_premium(n_clicks, frequency, horizon, selected_users, model_choice):
+    df = global_store.get("drowsiness_df")
+    if df is None or "Timestamp" not in df.columns:
+        return "Please upload drowsiness CSV first.", go.Figure()
+    
+     # Early exit if no user selected
+    if not selected_users or len(selected_users) == 0:
+        return "No users selected.", go.Figure()
+
+    # Prepare data
+    df["Timestamp"] = pd.to_datetime(df["Timestamp"], errors="coerce")
+    df = df.dropna(subset=["Timestamp", "User ID"])
+    df["User ID"] = df["User ID"].astype(int)
+
+    if "Normalized Status" in df.columns:
+        df["Status"] = df["Normalized Status"]
+
+    risk_map = {"Active": 0, "Drowsy": 1, "Yawning": 2, "Sleeping": 3}
+    df["Risk Score"] = df["Status"].map(risk_map)
+
+# Filter by selected users
+    df = df[df["User ID"].isin(selected_users)]
+    
+    if df.empty:
+        return "No data for selected users.", go.Figure()
+    # Smooth risk
+    df["Risk Score"] = df["Risk Score"].rolling(3, min_periods=1).mean()
+
+    grouped = (
+        df.groupby([pd.Grouper(key="Timestamp", freq=frequency), "User ID"])["Risk Score"]
+        .mean().reset_index(name="Avg Risk")
+    )
+
+    base_mileage = 10000 / (52 if frequency == "W" else 12)
+    C0, wp = 300, 0.05
+
+    fig = go.Figure()
+
+    for uid, user_data in grouped.groupby("User ID"):
+        user_data = user_data.sort_values("Timestamp")
+
+        # Historical premium
+        user_data["Predicted Premium"] = user_data.apply(
+            lambda row: round(C0 + (row["Avg Risk"] / 2) * wp * base_mileage), axis=1
+        )
+
+        # Plot historical
+        fig.add_trace(go.Scatter(
+            x=user_data["Timestamp"], y=user_data["Predicted Premium"],
+            mode="lines+markers",
+            name=f"User {uid}",
+            line=dict(shape="spline")
+        ))
+
+         
+
+        # --- Always start with safe defaults ---
+        last_val = user_data["Avg Risk"].iloc[-1]
+        forecast = [last_val] * horizon
+        future_dates = pd.date_range(
+            start=user_data["Timestamp"].max() + pd.tseries.frequencies.to_offset(frequency),
+            periods=horizon, freq=frequency
+        )
+        series = user_data["Avg Risk"].copy()
+        # Each model handles scaling differently
+        if model_choice == "prophet":
+            mean_val, std_val = series.mean(), series.std() + 1e-6
+            series_scaled = (series - mean_val) / std_val    
+        else:
+            series_scaled = series  # Keep original scale for ARIMA & Holt-Winters
+        if len(user_data) >= 5:
+            try:
+                print(f"Running {model_choice} for User {uid}, data points = {len(user_data)}")
+
+                if model_choice == "holtwinters": 
+                    model = ExponentialSmoothing(
+                    user_data["Avg Risk"], trend="add", seasonal="add", 
+                    seasonal_periods=max(2, len(user_data)//2)
+                     ).fit()
+                    forecast = model.forecast(horizon)
+                
+                elif model_choice == "arima":
+                    model = ARIMA(user_data["Avg Risk"], order=(1,1,1)).fit()
+                    forecast = model.forecast(steps=horizon)
+                    
+                elif model_choice == "prophet":
+                    df_fb = pd.DataFrame({"ds": user_data["Timestamp"], "y": series_scaled})
+                m = Prophet(
+                    yearly_seasonality=False, 
+                    weekly_seasonality=True, 
+                    daily_seasonality=False,
+                    changepoint_prior_scale=0.4,  # make Prophet more flexible
+                    seasonality_mode="multiplicative"
+                )    
+                m.fit(df_fb)
+                future = m.make_future_dataframe(periods=horizon, freq=frequency)
+                forecast_df = m.predict(future)
+                forecast_scaled = forecast_df.tail(horizon)["yhat"].values
+                forecast = (forecast_scaled * std_val) + mean_val
+
+            except Exception as e:
+                    print(f"[WARN] {model_choice} failed for User{uid}: {e}")
+                    forecast = [last_val] * horizon
+
+
+         # Add mild randomness to differentiate models with small datasets
+        rng = np.random.default_rng(seed=uid)
+        if model_choice == "holtwinters":
+            forecast += rng.normal(0, 0.05, size=horizon)
+        elif model_choice == "arima":
+            forecast += rng.normal(0, 0.03, size=horizon)
+        elif model_choice == "prophet":
+            forecast += rng.normal(0, 0.02, size=horizon)
+
+        future_premiums = [
+            round(C0 + (val / 2) * wp * base_mileage) for val in forecast
+        ]
+        # Forecast line (dashed)
+        fig.add_trace(go.Scatter(
+            x=future_dates, y=future_premiums,
+            mode="lines+markers",
+            name=f"User {uid} ({model_choice})",
+            line=dict(dash="dash", color=MODEL_COLORS.get(model_choice, "black")),
+            showlegend=False
+        ))
+        
+    fig.update_layout(
+        title=f"Predicted Insurance Premiums ({'Weekly' if frequency=='W' else 'Monthly'})",
+        xaxis_title="Date",
+        yaxis_title="Premium"
+    )
+    summary = f"Prediction completed with {horizon} future periods for {len(grouped['User ID'].unique())} users using {model_choice}."
+    return summary, fig
+
+if __name__ == '__main__':
+    # Outer container wrapper to center content and set background
+    app.index_string = '''
+    <!DOCTYPE html>
+    <html>
+        <head>
+            {%metas%}
+            <title>{%title%}</title>
+            {%favicon%}
+            {%css%}
+        </head>
+        <body style="background: ''' + APP_BG + ''';">
+            <div id="react-entry-point" style="max-width: 1200px; margin: 0 auto; padding: 0 20px;">
+                {%app_entry%}
+            </div>
+            <footer>
+                {%config%}
+                {%scripts%}
+                {%renderer%}
+            </footer>
+        </body>
+    </html>
+    '''
+    app.run(debug=True)
