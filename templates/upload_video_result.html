@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analysis Result</title>
+</head>
+<body>
+    <h1>Driving Behavior Analysis</h1>
+
+    <!-- Display overall percentages -->
+    <p><strong>Dangerous Driving Percentage:</strong> {{ dangerous_percentage|floatformat:2 }}%</p>
+    <p><strong>Normal Driving Percentage:</strong> {{ normal_percentage|floatformat:2 }}%</p>
+
+    <!-- Display the graph -->
+    <h2>Graph</h2>
+    <img src="{{ graph_url }}" alt="Driving Behavior Graph">
+
+    <!-- Display sample frames -->
+    <h2>Sample Frames</h2>
+    {% if sample_paths.dangerous_driving_behavior %}
+        <h3>Dangerous Driving</h3>
+        <img src="{{ sample_paths.dangerous_driving_behavior }}" alt="Dangerous Frame" style="max-width: 300px;">
+    {% endif %}
+    {% if sample_paths.eating_drinking %}
+        <h3>Eating/Drinking</h3>
+        <img src="{{ sample_paths.eating_drinking }}" alt="Eating/Drinking Frame" style="max-width: 300px;">
+    {% endif %}
+    {% if sample_paths.phone %}
+        <h3>Phone Usage</h3>
+        <img src="{{ sample_paths.phone }}" alt="Phone Frame" style="max-width: 300px;">
+    {% endif %}
+
+    <!-- Return to homepage button -->
+    <a href="{% url 'home/' %}">
+        <button style="padding: 10px 20px; font-size: 16px; cursor: pointer;">Return to Homepage</button>
+    </a>
+</body>
+</html>

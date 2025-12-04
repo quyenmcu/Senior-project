@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Drowsiness Detection</title>
+</head>
+<body>
+    <h1>Drowsiness Detection</h1>
+
+    <!-- 顯示目前登入使用者 -->
+    <p>Welcome, {{ request.user.username }} 👋</p>
+
+    <!-- 顯示提示訊息 -->
+    {% if messages %}
+    <ul style="color: green;">
+        {% for message in messages %}
+            <li>{{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <!-- 用於開始檢測的表單 -->
+    <form method="POST" action="{% url 'start_detection' %}">
+        {% csrf_token %}
+        <button type="submit">Start Detection</button>
+    </form>
+
+    <!-- 用於停止檢測的表單 -->
+    <form method="POST" action="{% url 'stop_detection' %}" style="margin-top: 20px;">
+        {% csrf_token %}
+        <button type="submit">Stop Detection</button>
+    </form>
+
+    <!-- 返回主頁按鈕 -->
+    <div style="margin-top: 20px;">
+        <a href="{% url 'home' %}" style="text-decoration: none;">
+            <button type="button">Back to Home</button>
+        </a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Detection Stopped</title>
+    <link href="{% static 'css/webflow-style.css' %}" rel="stylesheet">
+</head>
+<body>
+    <div class="container" style="text-align: center; padding-top: 50px;">
+        <h1>🛑 Detection Stopped</h1>
+        <p>The detection process has been successfully stopped.</p>
+
+        <div style="margin-top: 30px;">
+            <a href="{% url 'home' %}">
+                <button type="button" class="button-3 w-button">🏠 Back to Home</button>
+            </a>
+
+            <a href="{% url 'my_images_local' %}" style="margin-left: 20px;">
+                <button type="button" class="button-3 w-button">🖼️ View My Images</button>
+            </a>
+        </div>
+    </div>
+</body>
+</html>

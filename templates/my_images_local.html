@@ -1,0 +1,47 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Captured Images</title>
+    <link href="{% static 'css/webflow-style.css' %}" rel="stylesheet">
+    <style>
+        .container {
+            max-width: 900px;
+            margin: auto;
+            padding: 40px;
+            font-family: sans-serif;
+        }
+        .image-block {
+            margin-bottom: 40px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>📸 My Local Captured Images</h2>
+
+        {% if images %}
+            <ul style="list-style: none; padding: 0;">
+            {% for img in images %}
+                <li class="image-block">
+                    <p><strong>Status:</strong> {{ img.status }}</p>
+                    <p><strong>Captured at:</strong> {{ img.timestamp }}</p>
+                    <img src="{{ img.url }}" width="300"/>
+                </li>
+            {% endfor %}
+            </ul>
+        {% else %}
+            <p>No images found.</p>
+        {% endif %}
+
+        <div style="margin-top: 30px;">
+            <a class="button-3 w-button" href="{% url 'home' %}">🏠 Back to Home</a>
+            <a class="button-3 w-button" href="{% url 'start_detection' %}">🎥 Start Detection Again</a>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User {{ user_id }} Images</title>
+</head>
+<body>
+    <h1>Images for User {{ user_id }}</h1>
+    {% for img in images %}
+        <div style="margin-bottom: 20px;">
+            <p><strong>{{ img.filename }}</strong> | Status: {{ img.status }} | Time: {{ img.timestamp }}</p>
+            <img src="data:image/jpeg;base64,{{ img.image_base64 }}" width="300"/>
+        </div>
+    {% endfor %}
+</body>
+</html>

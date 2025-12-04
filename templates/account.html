@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Account</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; margin:0; }
+    .bar { background:#1e73c9; color:#fff; padding:14px 24px; display:flex; gap:24px; align-items:center; }
+    .wrap { max-width:1024px; margin:24px auto; padding:0 16px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:12px; }
+    .card { background:#f6f8fb; border-radius:14px; padding:10px; }
+    img.thumb { width:100%; height:140px; object-fit:cover; border-radius:10px; display:block; }
+    .header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .btn { background:#1e73c9; color:#fff; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; text-decoration:none; display:inline-block; }
+    .btn[disabled] { opacity:.5; cursor:not-allowed; }
+    .muted { color:#666; }
+  </style>
+</head>
+<body>
+  <!-- your existing navbar can sit above/below this -->
+  <div class="bar">
+    <strong>Account</strong>
+  </div>
+
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <h2 style="margin:.2rem 0;">Hi, {{ account_name }}</h2>
+        <div class="muted">Account ID: {{ account_id }}</div>
+      </div>
+      <div>
+        {% if has_csv %}
+          <a class="btn" href="{% url 'download_csv' %}">Download Records CSV</a>
+        {% else %}
+          <a class="btn" aria-disabled="true" onclick="return false;" disabled>No CSV yet</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <h3 style="margin:18px 0 8px;">Recent Record Pictures</h3>
+    {% if images %}
+  <div class="grid">
+    {% for src in images %}
+      <img class="thumb" src="{{ src }}" alt="record image {{ forloop.counter }}">
+    {% endfor %}
+  </div>
+{% else %}
+  <p>No pictures yet. Run a detection to see images here.</p>
+{% endif %}
+    {% if debug %}
+  <pre style="white-space:pre-wrap;background:#f6f8fb;padding:12px;border-radius:8px">
+{{ debug|safe }}
+  </pre>
+{% endif %}
+
+
+
+  </div>
+</body>
+</html>
