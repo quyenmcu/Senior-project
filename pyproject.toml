@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "irismind"
+version = "0.1.0"
+description = "Fatigue-aware usage-based insurance platform"
+requires-python = ">=3.11"
+dependencies = [
+  "Django>=5.1,<5.3",
+  "dj-database-url>=2.3,<3",
+  "python-dotenv>=1.0,<2",
+  "psycopg[binary]>=3.2,<4",
+  "whitenoise>=6.8,<7",
+  "Pillow>=11,<13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9", "pytest-django>=4.9,<5", "ruff>=0.9,<1"]
+cv = ["opencv-python>=4.10,<5", "mediapipe==0.10.21", "numpy>=1.26,<2"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+python_files = ["test_*.py"]
+
+[tool.setuptools.packages.find]
+include = ["apps*", "config*"]
+exclude = ["tests*", "templates*", "static*", "models*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = ["RUF012"]

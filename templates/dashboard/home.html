@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}IrisMind · Fatigue-aware UBI{% endblock %}
+{% block content %}
+<section class="landing-hero">
+  <div class="hero-copy">
+    <div class="eyebrow"><span></span> Intelligent driver protection</div>
+    <h1>Safer driving.<br><em>Fairer insurance.</em></h1>
+    <p>IrisMind connects real-time fatigue detection with smartphone telemetry to understand driving risk and estimate a personalized insurance premium.</p>
+    <div class="hero-actions">{% if user.is_authenticated %}<a class="primary-cta" href="{% url 'dashboard' %}">Open my dashboard <b>→</b></a>{% else %}<a class="primary-cta" href="{% url 'register' %}">Start your profile <b>→</b></a><a class="text-cta" href="{% url 'login' %}">I already have an account</a>{% endif %}</div>
+    <div class="trust-row"><span>● Real-time fatigue</span><span>● Smartphone sensors</span><span>● Private by design</span></div>
+  </div>
+  <div class="vision-stage" aria-label="IrisMind driver monitoring visualization">
+    <div class="scan-line"></div><div class="corner tl"></div><div class="corner tr"></div><div class="corner bl"></div><div class="corner br"></div>
+    {% load static %}<img class="mediapipe-face" src="{% static 'images/mediapipe-face-landmarks.png' %}" alt="MediaPipe face landmark detection example">
+    <div class="status-card"><span class="live-dot"></span><div><small>DRIVER STATUS</small><strong>Active</strong></div><b>98%</b></div>
+    <div class="metric-chip chip-one"><small>EAR</small><strong>0.31</strong></div><div class="metric-chip chip-two"><small>RISK</small><strong>LOW</strong></div>
+  </div>
+</section>
+<section class="feature-strip" id="features"><article><b>01</b><div><strong>Computer vision</strong><span>Eye state and yawning detection</span></div></article><article><b>02</b><div><strong>Smartphone telemetry</strong><span>Acceleration, braking and turns</span></div></article><article><b>03</b><div><strong>Usage-based insurance</strong><span>Transparent personalized estimates</span></div></article></section>
+<section class="system-section" id="system"><div><span class="section-label">One connected system</span><h2>From driver signals to a clear risk profile</h2><p>Every trip connects fatigue events and phone sensor readings through the same private driving session.</p></div><div class="system-flow"><span>Camera</span><b>→</b><span>Fatigue AI</span><b>+</b><span>Phone</span><b>→</b><span>Risk & premium</span></div></section>
+<section class="ubi-section" id="ubi"><span class="section-label">Your dashboard</span><h2>Everything important, in one view.</h2><p>Review fatigue status, telemetry, driving behavior, your current premium estimate and future projections.</p></section>
+{% endblock %}
