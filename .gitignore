@@ -8,7 +8,11 @@ db.sqlite3
 staticfiles/
 media/
 data/
+demo_data/*.csv
 *.avi
 *.mp4
 *.keras
 *.npy
+*.7z
+.coverage
+htmlcov/

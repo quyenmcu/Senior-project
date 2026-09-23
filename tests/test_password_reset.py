@@ -9,6 +9,7 @@ from django.utils.crypto import get_random_string
 def test_password_reset_sends_email_for_registered_address(client, settings):
     settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
     User.objects.create_user(
+        "driver-reset", email="driver@example.com", password="old-password-123"
         "driver-reset", email="driver@example.com", password=get_random_string(32)
     )
     response = client.post(reverse("password_reset"), {"email": "driver@example.com"})

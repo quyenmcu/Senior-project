@@ -48,6 +48,7 @@ def start_session(request):
         started_at=timezone.now(),
         source_device_id=str(data.get("source_device_id", ""))[:128],
     )
+    return JsonResponse({"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201)
     return JsonResponse(
         {"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201
     )
@@ -104,6 +105,12 @@ def analyze_fatigue_frame(request, session_id):
         data = _payload(request)
         encoded = data["image"].split(",", 1)[-1]
         image_bytes = base64.b64decode(encoded)
+        frame = cv2.imdecode(
+            np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        if frame is None:
+            raise ValueError("The submitted camera frame is invalid.")
+        result = analyze(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), session.id)
         frame = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             raise ValueError("The submitted camera frame is invalid.")
@@ -157,6 +164,7 @@ def ingest_telemetry(request, session_id):
         data = _payload(request)
         motion_class = str(data.get("motion_class", "NORMAL")).upper()
         if motion_class not in TelemetryEvent.MotionClass.values:
+            raise ValueError(f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}")
             raise ValueError(
                 f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}"
             )

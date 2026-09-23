@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from math import hypot
 from math import atan2, degrees, hypot
 
 import numpy as np
@@ -9,6 +10,17 @@ import numpy as np
 LEFT_EYE = [33, 160, 158, 133, 153, 144]
 RIGHT_EYE = [362, 385, 387, 263, 373, 380]
 MOUTH = [13, 14, 78, 308]
+CALIBRATION_FRAMES = 50
+MAR_THRESHOLD = 0.60
+
+
+@dataclass
+class SessionState:
+    calibration: list[float] = field(default_factory=list)
+    ear_history: deque = field(default_factory=lambda: deque(maxlen=5))
+    mar_history: deque = field(default_factory=lambda: deque(maxlen=5))
+    last_status: str | None = None
+
 POSE_LANDMARKS = (1, 152, 33, 263, 61, 291)
 MODEL_POINTS = np.array(
     [
@@ -148,6 +160,22 @@ def _mar(points):
     return vertical / horizontal if horizontal > 1e-8 else 0.0
 
 
+def analyze(rgb_frame, session_id):
+    result = _mesh().process(rgb_frame)
+    if not result.multi_face_landmarks:
+        return {"detected": False, "message": "No face detected"}
+
+    points = result.multi_face_landmarks[0].landmark
+    current_ear = (_ear(points, LEFT_EYE) + _ear(points, RIGHT_EYE)) / 2
+    current_mar = _mar(points)
+    state = _states.setdefault(str(session_id), SessionState())
+
+    if len(state.calibration) < CALIBRATION_FRAMES:
+        state.calibration.append(current_ear)
+        return {
+            "detected": True,
+            "calibrating": True,
+            "progress": len(state.calibration),
 def _head_angles(points, width: int, height: int):
     import cv2
 
@@ -223,6 +251,25 @@ def analyze(rgb_frame, session_id, side_calibration=None):
             **_landmarks(points),
         }
 
+    average_ear = sum(state.calibration) / len(state.calibration)
+    state.ear_history.append(current_ear)
+    state.mar_history.append(current_mar)
+    ear = sum(state.ear_history) / len(state.ear_history)
+    mar = sum(state.mar_history) / len(state.mar_history)
+
+    if ear < average_ear * 0.75:
+        status = "SLEEPING"
+        confidence = min(1.0, (average_ear * 0.75 - ear) / max(average_ear * 0.75, 1e-8) + 0.70)
+    elif ear < average_ear * 0.90:
+        status = "DROWSY"
+        confidence = min(1.0, (average_ear * 0.90 - ear) / max(average_ear * 0.15, 1e-8))
+    elif mar > MAR_THRESHOLD:
+        status = "YAWNING"
+        confidence = min(1.0, 0.70 + (mar - MAR_THRESHOLD))
+    else:
+        status = "ACTIVE"
+        confidence = min(1.0, ear / max(average_ear, 1e-8))
+
     base_left = float(np.median(state.left_calibration))
     base_right = float(np.median(state.right_calibration))
     base_pitch = float(np.median(state.pitch_calibration))
@@ -259,6 +306,8 @@ def analyze(rgb_frame, session_id, side_calibration=None):
         "status": status,
         "confidence": round(confidence, 3),
         "ear": round(ear, 3),
+        "mar": round(mar, 3),
+        "average_ear": round(average_ear, 3),
         "left_ear": round(left_ear, 3),
         "right_ear": round(right_ear, 3),
         "mar": round(mar, 3),
@@ -285,6 +334,8 @@ def _landmarks(points):
     return {
         "bbox": [min(xs), min(ys), max(xs), max(ys)],
         "landmarks": {
+            str(index): [round(points[index].x, 5), round(points[index].y, 5)]
+            for index in used
             str(index): [round(points[index].x, 5), round(points[index].y, 5)] for index in used
         },
         "left_eye": LEFT_EYE,
