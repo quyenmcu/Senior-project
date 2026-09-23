@@ -12,15 +12,15 @@ from apps.driving.fatigue_detector import (
 def test_head_pose_uses_pitch_for_nods_and_roll_for_side_tilts():
     assert classify_head_pose(13, 0) == "FORWARD"
     assert classify_head_pose(-11, 0) == "BACKWARD"
-    assert classify_head_pose(0, -21) == "LEFT"
-    assert classify_head_pose(0, 21) == "RIGHT"
+    assert classify_head_pose(0, -21) == "RIGHT"
+    assert classify_head_pose(0, 21) == "LEFT"
 
 
 def test_head_pose_hysteresis_holds_side_pose_until_exit_threshold():
     classifier = HeadPoseClassifier()
-    assert classifier.update(0, -21) == "LEFT"
-    assert classifier.update(0, -16) == "LEFT"
-    assert classifier.update(0, -13) == "NORMAL"
+    assert classifier.update(0, 21) == "LEFT"
+    assert classifier.update(0, 16) == "LEFT"
+    assert classifier.update(0, 13) == "NORMAL"
 
 
 def test_angle_wraparound_supports_backward_pose():

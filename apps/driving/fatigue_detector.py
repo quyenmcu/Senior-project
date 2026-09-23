@@ -32,9 +32,9 @@ def normalize_angle(angle: float) -> float:
 
 def classify_head_pose(pitch: float, roll: float) -> str:
     if roll < -20.0:
-        return "LEFT"
-    if roll > 20.0:
         return "RIGHT"
+    if roll > 20.0:
+        return "LEFT"
     if pitch > 12.0:
         return "FORWARD"
     if pitch < -10.0:
@@ -47,15 +47,15 @@ class HeadPoseClassifier:
     current: str = "NORMAL"
 
     def update(self, pitch: float, roll: float) -> str:
-        if self.current == "LEFT" and roll < -14.0:
+        if self.current == "LEFT" and roll > 14.0:
             return self.current
-        if self.current == "RIGHT" and roll > 14.0:
+        if self.current == "RIGHT" and roll < -14.0:
             return self.current
         if roll < -20.0:
-            self.current = "LEFT"
+            self.current = "RIGHT"
             return self.current
         if roll > 20.0:
-            self.current = "RIGHT"
+            self.current = "LEFT"
             return self.current
         if self.current == "FORWARD" and pitch > 8.0:
             return self.current
