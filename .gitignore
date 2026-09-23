@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+db.sqlite3
+staticfiles/
+media/
+data/
+*.avi
+*.mp4
+*.keras
+*.npy

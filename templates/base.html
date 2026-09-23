@@ -1,0 +1,25 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}IrisMind{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app-v2.css' %}">
+  <link rel="stylesheet" href="{% static 'css/refinements.css' %}">
+  <link rel="stylesheet" href="{% static 'css/monitor.css' %}">
+  <link rel="stylesheet" href="{% static 'css/insights.css' %}">
+  <link rel="stylesheet" href="{% static 'css/trends.css' %}">
+  <link rel="stylesheet" href="{% static 'css/demo-data.css' %}">
+  <link rel="stylesheet" href="{% static 'css/premium-series.css' %}">
+  <link rel="stylesheet" href="{% static 'css/landing-assets.css' %}">
+</head>
+<body>
+  <nav class="site-nav">
+    <a class="brand" href="{% url 'home' %}"><span class="brand-mark">I</span>IrisMind</a>
+    <div class="nav-links"><a href="{% url 'home' %}#system">System</a><a href="{% url 'home' %}#features">Features</a><a href="{% url 'home' %}#ubi">UBI</a></div>
+    <div class="nav-actions">{% if user.is_authenticated %}<a href="{% url 'fatigue-monitor' %}">Fatigue detection</a><a href="{% url 'dashboard' %}">Dashboard</a>{% if user.is_staff %}<a href="{% url 'admin-overview' %}">Admin</a>{% endif %}<span>{{ user.get_full_name|default:user.username }}</span><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="ghost-btn">Log out</button></form>{% else %}<a href="{% url 'login' %}">Log in</a><a class="button-link" href="{% url 'register' %}">Create account</a>{% endif %}</div>
+  </nav>
+  <main>{% block content %}{% endblock %}</main>
+</body>
+</html>
