@@ -25,6 +25,19 @@ def test_monitor_requires_login_and_sets_csrf_cookie(client):
 
 
 @pytest.mark.django_db
+def test_monitor_renders_one_working_detection_interface(client):
+    user = User.objects.create_user("single-monitor-driver")
+    client.force_login(user)
+
+    content = client.get(reverse("fatigue-monitor")).content.decode()
+
+    assert content.count('id="startButton"') == 1
+    assert content.count('id="camera"') == 1
+    assert content.count('id="sessionState"') == 1
+    assert content.count("let stream=") == 1
+
+
+@pytest.mark.django_db
 def test_admin_overview_is_staff_only(client):
     regular = User.objects.create_user("regular")
     client.force_login(regular)
