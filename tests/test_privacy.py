@@ -12,6 +12,12 @@ def test_dashboard_does_not_show_another_users_events(client):
     intruder = User.objects.create_user("intruder", password="test-password")
     session = DrivingSession.objects.create(user=owner, started_at=timezone.now())
     FatigueEvent.objects.create(user=owner, session=session, recorded_at=timezone.now(), status="SLEEPING")
+    owner = User.objects.create_user("owner")
+    intruder = User.objects.create_user("intruder")
+    session = DrivingSession.objects.create(user=owner, started_at=timezone.now())
+    FatigueEvent.objects.create(
+        user=owner, session=session, recorded_at=timezone.now(), status="SLEEPING"
+    )
     client.force_login(intruder)
     response = client.get(reverse("dashboard"))
     assert response.status_code == 200

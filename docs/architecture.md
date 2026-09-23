@@ -18,3 +18,12 @@ Initial session-authenticated ingestion contracts:
 The next implementation stage will expose authenticated ingestion endpoints for the fatigue
 client and smartphone application. Raw images and video must remain private media artifacts;
 ordinary dashboard and pricing queries should use event metadata only.
+
+## Prediction path
+
+- Weekly and monthly features combine fatigue severity and driving-behavior summaries.
+- The MLP estimates the current risk score from the latest feature window.
+- The optional LSTM forecasts a future risk trajectory only when sufficient longitudinal data exists.
+- Premium estimates use the configured transparent formula so the displayed result remains auditable.
+
+The website-ready architecture diagram is stored at `static/images/system-architecture.svg`.

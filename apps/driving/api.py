@@ -49,6 +49,9 @@ def start_session(request):
         source_device_id=str(data.get("source_device_id", ""))[:128],
     )
     return JsonResponse({"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201)
+    return JsonResponse(
+        {"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201
+    )
 
 
 @require_POST
@@ -108,6 +111,14 @@ def analyze_fatigue_frame(request, session_id):
         if frame is None:
             raise ValueError("The submitted camera frame is invalid.")
         result = analyze(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), session.id)
+        frame = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            raise ValueError("The submitted camera frame is invalid.")
+        result = analyze(
+            cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
+            session.id,
+            side_calibration=data.get("side_calibration"),
+        )
         if result.get("changed"):
             event = FatigueEvent.objects.create(
                 user=request.user,
@@ -154,6 +165,9 @@ def ingest_telemetry(request, session_id):
         motion_class = str(data.get("motion_class", "NORMAL")).upper()
         if motion_class not in TelemetryEvent.MotionClass.values:
             raise ValueError(f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}")
+            raise ValueError(
+                f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}"
+            )
         event = TelemetryEvent(
             user=request.user,
             session=session,

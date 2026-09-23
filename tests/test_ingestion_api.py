@@ -11,6 +11,7 @@ from apps.driving.models import DrivingSession, FatigueEvent, TelemetryEvent
 @pytest.mark.django_db
 def test_authenticated_clients_can_create_a_shared_session_and_events(client):
     user = User.objects.create_user("driver", password="test-password")
+    user = User.objects.create_user("driver")
     client.force_login(user)
     response = client.post(
         reverse("api-start-session"),
@@ -32,6 +33,18 @@ def test_authenticated_clients_can_create_a_shared_session_and_events(client):
             "gyro_x": 0.01, "gyro_y": 0.02, "gyro_z": 0.03,
             "speed_kmh": 42, "motion_class": "NORMAL",
         }),
+        data=json.dumps(
+            {
+                "acc_x": 0.1,
+                "acc_y": 0.2,
+                "acc_z": 9.7,
+                "gyro_x": 0.01,
+                "gyro_y": 0.02,
+                "gyro_z": 0.03,
+                "speed_kmh": 42,
+                "motion_class": "NORMAL",
+            }
+        ),
         content_type="application/json",
     )
     assert fatigue.status_code == telemetry.status_code == 201

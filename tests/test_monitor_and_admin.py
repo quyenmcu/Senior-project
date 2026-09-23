@@ -19,6 +19,9 @@ def test_monitor_requires_login_and_sets_csrf_cookie(client):
     response = client.get(reverse("fatigue-monitor"))
     assert response.status_code == 200
     assert "csrftoken" in response.cookies
+    assert b"Calibrate Left" in response.content
+    assert b"Calibrate Right" in response.content
+    assert b"Head pose" in response.content
 
 
 @pytest.mark.django_db

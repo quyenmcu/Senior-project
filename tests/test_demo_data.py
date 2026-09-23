@@ -30,6 +30,10 @@ def test_kaggle_demo_summary_preserves_dataset_meaning(demo_files):
     summary = kaggle_demo_summary()
     assert summary["raw_total"] == 3
     assert summary["feature_total"] == 4
+def test_kaggle_demo_summary_preserves_dataset_meaning():
+    summary = kaggle_demo_summary()
+    assert summary["raw_total"] == 3644
+    assert summary["feature_total"] == 1102
     assert {row["label"] for row in summary["motion_counts"]} == {
         "Normal", "Aggressive", "Slow",
     }
@@ -37,6 +41,7 @@ def test_kaggle_demo_summary_preserves_dataset_meaning(demo_files):
 
 @pytest.mark.django_db
 def test_dashboard_labels_kaggle_data_as_demo(client, demo_files):
+def test_dashboard_labels_kaggle_data_as_demo(client):
     user = User.objects.create_user("demo-driver")
     client.force_login(user)
     response = client.get(reverse("dashboard"))
