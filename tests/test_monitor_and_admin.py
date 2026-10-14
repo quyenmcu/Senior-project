@@ -85,8 +85,14 @@ def test_analyzed_status_transition_is_saved(mock_analyze, client, settings, tmp
         "status": "DROWSY",
         "confidence": 0.91,
         "ear": 0.18,
+        "left_ear": 0.17,
+        "right_ear": 0.19,
         "mar": 0.31,
         "average_ear": 0.29,
+        "head_pose": "FORWARD",
+        "pitch": 18.4,
+        "yaw": -1.2,
+        "roll": 2.7,
         "changed": True,
     }
     image = np.zeros((16, 16, 3), dtype=np.uint8)
@@ -99,7 +105,13 @@ def test_analyzed_status_transition_is_saved(mock_analyze, client, settings, tmp
         content_type="application/json",
     )
     assert response.status_code == 200
-    assert user.fatigue_events.filter(status="DROWSY").count() == 1
+    event = user.fatigue_events.get(status="DROWSY")
+    assert event.head_pose == FatigueEvent.HeadPose.FORWARD
+    assert event.left_ear == pytest.approx(0.17)
+    assert event.right_ear == pytest.approx(0.19)
+    assert event.pitch == pytest.approx(18.4)
+    assert event.yaw == pytest.approx(-1.2)
+    assert event.roll == pytest.approx(2.7)
     snapshot = user.fatigue_snapshots.get()
     assert snapshot.image.name.endswith(".jpg")
 
