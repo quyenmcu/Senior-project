@@ -29,13 +29,28 @@ class FatigueEvent(models.Model):
         YAWNING = "YAWNING", "Yawning"
         SLEEPING = "SLEEPING", "Sleeping"
 
+    class HeadPose(models.TextChoices):
+        NORMAL = "NORMAL", "Normal"
+        FORWARD = "FORWARD", "Forward"
+        BACKWARD = "BACKWARD", "Backward"
+        LEFT = "LEFT", "Left"
+        RIGHT = "RIGHT", "Right"
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fatigue_events")
     session = models.ForeignKey(DrivingSession, on_delete=models.CASCADE, related_name="fatigue_events")
     recorded_at = models.DateTimeField(db_index=True)
     status = models.CharField(max_length=12, choices=Status.choices)
     confidence = models.FloatField(null=True, blank=True)
     ear = models.FloatField(null=True, blank=True)
+    left_ear = models.FloatField(null=True, blank=True)
+    right_ear = models.FloatField(null=True, blank=True)
     mar = models.FloatField(null=True, blank=True)
+    head_pose = models.CharField(
+        max_length=12, choices=HeadPose.choices, null=True, blank=True
+    )
+    pitch = models.FloatField(null=True, blank=True)
+    yaw = models.FloatField(null=True, blank=True)
+    roll = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ["-recorded_at"]

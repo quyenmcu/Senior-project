@@ -35,6 +35,34 @@ def _owned_session(request, session_id):
     return get_object_or_404(DrivingSession, id=session_id, user=request.user)
 
 
+def _optional_float(data, key):
+    value = data.get(key)
+    return None if value in (None, "") else float(value)
+
+
+def _fatigue_measurements(data):
+    head_pose = data.get("head_pose")
+    if head_pose not in (None, ""):
+        head_pose = str(head_pose).upper()
+        if head_pose not in FatigueEvent.HeadPose.values:
+            raise ValueError(
+                f"head_pose must be one of {list(FatigueEvent.HeadPose.values)}"
+            )
+    else:
+        head_pose = None
+    return {
+        "confidence": _optional_float(data, "confidence"),
+        "ear": _optional_float(data, "ear"),
+        "left_ear": _optional_float(data, "left_ear"),
+        "right_ear": _optional_float(data, "right_ear"),
+        "mar": _optional_float(data, "mar"),
+        "head_pose": head_pose,
+        "pitch": _optional_float(data, "pitch"),
+        "yaw": _optional_float(data, "yaw"),
+        "roll": _optional_float(data, "roll"),
+    }
+
+
 @require_POST
 def start_session(request):
     if not request.user.is_authenticated:
@@ -48,7 +76,6 @@ def start_session(request):
         started_at=timezone.now(),
         source_device_id=str(data.get("source_device_id", ""))[:128],
     )
-    return JsonResponse({"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201)
     return JsonResponse(
         {"session_id": str(session.id), "started_at": session.started_at.isoformat()}, status=201
     )
@@ -82,9 +109,7 @@ def ingest_fatigue(request, session_id):
             session=session,
             recorded_at=_timestamp(data.get("recorded_at")),
             status=status,
-            confidence=data.get("confidence"),
-            ear=data.get("ear"),
-            mar=data.get("mar"),
+            **_fatigue_measurements(data),
         )
     except (KeyError, TypeError, ValueError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -110,10 +135,6 @@ def analyze_fatigue_frame(request, session_id):
         )
         if frame is None:
             raise ValueError("The submitted camera frame is invalid.")
-        result = analyze(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), session.id)
-        frame = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
-        if frame is None:
-            raise ValueError("The submitted camera frame is invalid.")
         result = analyze(
             cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
             session.id,
@@ -125,9 +146,7 @@ def analyze_fatigue_frame(request, session_id):
                 session=session,
                 recorded_at=timezone.now(),
                 status=result["status"],
-                confidence=result["confidence"],
-                ear=result["ear"],
-                mar=result["mar"],
+                **_fatigue_measurements(result),
             )
             if result["status"] in {"DROWSY", "SLEEPING", "YAWNING"}:
                 snapshot = FatigueSnapshot(
@@ -164,7 +183,6 @@ def ingest_telemetry(request, session_id):
         data = _payload(request)
         motion_class = str(data.get("motion_class", "NORMAL")).upper()
         if motion_class not in TelemetryEvent.MotionClass.values:
-            raise ValueError(f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}")
             raise ValueError(
                 f"motion_class must be one of {list(TelemetryEvent.MotionClass.values)}"
             )
